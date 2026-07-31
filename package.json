@@ -1,0 +1,52 @@
+{
+  "name": "x402-bench",
+  "version": "0.0.1",
+  "description": "The x402 test bench: a local, honest mock facilitator. Real @x402 signature verification, faked chain — it won't teach you a false green.",
+  "type": "module",
+  "license": "MIT",
+  "author": "Kevin Brown",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/x402spendguard/x402-bench.git"
+  },
+  "keywords": [
+    "x402",
+    "facilitator",
+    "mock",
+    "sandbox",
+    "testing",
+    "eip-3009",
+    "payments",
+    "offline"
+  ],
+  "files": [
+    "dist"
+  ],
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@x402/core": "~2.18.0",
+    "@x402/evm": "~2.18.0",
+    "viem": "^2.55.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.19.43",
+    "typescript": "^5.4.0",
+    "vitest": "^3.2.7"
+  }
+}
