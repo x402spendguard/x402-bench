@@ -3,7 +3,7 @@
 // Prints the fidelity banner LOUDLY first, so the boundary (real crypto, faked chain) is stated
 // before a single request is served.
 import type { Network } from "@x402/core/types";
-import { startBenchServer } from "./server.js";
+import { startBenchServer, type BenchEvent } from "./server.js";
 import { FIDELITY_BANNER } from "./fidelity.js";
 
 function flag(name: string, fallback?: string): string | undefined {
@@ -19,6 +19,21 @@ const tokenVersion = flag("token-version", "2") as string;
 const fault = flag("fault"); // "transferReverts" | "settleReverts"
 const faults =
   fault === "transferReverts" ? { transferReverts: true } : fault === "settleReverts" ? { settleReverts: true } : undefined;
+const quiet = process.argv.includes("--quiet");
+
+const short = (a?: string): string => (a && a.length > 12 ? `${a.slice(0, 6)}…${a.slice(-4)}` : a ?? "?");
+
+/** The live inspector: render each handshake legibly, carrying the real-vs-simulated marks. */
+function printEvent(e: BenchEvent): void {
+  if (e.route === "supported") {
+    console.error("  · supported  kinds served");
+    return;
+  }
+  const mark = e.verdict === "accepted" ? "✓ accepted" : `✗ rejected (${e.reason ?? "?"})`;
+  const tx = e.transaction ? `  tx=${e.transaction.slice(0, 10)}…(synthetic)` : "";
+  console.error(`  · ${e.route.padEnd(7)} ${short(e.payer)} → ${short(e.payTo)}  ${e.amount ?? ""}  ${mark}${tx}`);
+  console.error(`              sig ✓ real · chain ~ simulated${e.route === "settle" ? " · settle ~ synthetic" : ""}`);
+}
 
 async function main(): Promise<void> {
   // eslint-disable-next-line no-console
@@ -28,11 +43,13 @@ async function main(): Promise<void> {
     networks: network as Network,
     chain: { deployedContracts: [asset], token: { name: tokenName, version: tokenVersion }, faults },
     port,
+    onEvent: quiet ? undefined : printEvent,
   });
   console.error(`x402-bench facilitator listening on ${server.url}`);
   console.error(`  POST ${server.url}/verify   POST ${server.url}/settle   GET ${server.url}/supported`);
   console.error(`  network=${network} asset=${asset}${fault ? ` fault=${fault}` : ""}`);
   console.error(`  point your @x402 client's facilitator URL here. Ctrl-C to stop.`);
+  console.error(quiet ? "  (inspector off — remove --quiet to watch handshakes)" : "  live inspector on — handshakes print below:");
 }
 
 main().catch((err) => {

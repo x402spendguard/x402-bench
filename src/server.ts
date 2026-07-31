@@ -14,11 +14,29 @@ import { BenchFacilitator, type BenchFacilitatorOpts } from "./bench-facilitator
 const FIDELITY_HEADER =
   "signature=verified; chain=simulated; settlement=synthetic; green-proves-shape-not-chain-acceptance";
 
+/** A single handshake through the facilitator, surfaced for the inspector. Data, not presentation —
+ *  the CLI renders it; tests assert on it. Fidelity is constant (sig real, chain faked) by design. */
+export interface BenchEvent {
+  route: "verify" | "settle" | "supported";
+  /** accepted/rejected for verify+settle; omitted for supported. */
+  verdict?: "accepted" | "rejected";
+  /** invalidReason / errorReason when rejected. */
+  reason?: string;
+  payer?: string;
+  payTo?: string;
+  amount?: string;
+  asset?: string;
+  /** The synthetic tx hash, on an accepted settle. */
+  transaction?: string;
+}
+
 export interface BenchServerOpts extends BenchFacilitatorOpts {
   /** Port to listen on. Default 3402; pass 0 for an ephemeral port (tests). */
   port?: number;
   /** Host to bind. Default 127.0.0.1 (local only — this is a dev tool, not a public facilitator). */
   host?: string;
+  /** Called once per handshake — the inspector tap. The CLI wires a live printer; tests capture. */
+  onEvent?: (event: BenchEvent) => void;
 }
 
 export interface RunningBenchServer {
@@ -56,12 +74,33 @@ export async function startBenchServer(opts: BenchServerOpts): Promise<RunningBe
     res.end(JSON.stringify(body, jsonReplacer));
   };
 
+  // The inspector tap: summarize a handshake and hand it to opts.onEvent (if any). Read-only over
+  // untrusted JSON, so every field is optional-and-defensive.
+  const emit = (route: BenchEvent["route"], rawPayload: unknown, rawReq: unknown, result: unknown): void => {
+    if (!opts.onEvent) return;
+    const p = rawPayload as { payload?: { authorization?: { from?: string } } };
+    const r = rawReq as { payTo?: string; amount?: string; asset?: string };
+    const out = result as { isValid?: boolean; success?: boolean; invalidReason?: string; errorReason?: string; transaction?: string };
+    const accepted = route === "verify" ? out.isValid === true : out.success === true;
+    opts.onEvent({
+      route,
+      verdict: accepted ? "accepted" : "rejected",
+      reason: accepted ? undefined : out.invalidReason ?? out.errorReason,
+      payer: p.payload?.authorization?.from,
+      payTo: r.payTo,
+      amount: r.amount,
+      asset: r.asset,
+      transaction: route === "settle" && accepted ? out.transaction : undefined,
+    });
+  };
+
   const server = createServer((req, res) => {
     void (async () => {
       try {
         const url = req.url ?? "";
         const method = req.method ?? "GET";
         if (method === "GET" && url.startsWith("/supported")) {
+          opts.onEvent?.({ route: "supported" });
           send(res, 200, facilitator.getSupported());
           return;
         }
@@ -76,9 +115,11 @@ export async function startBenchServer(opts: BenchServerOpts): Promise<RunningBe
           }
           const payload = parsed.paymentPayload as never;
           const requirements = parsed.paymentRequirements as never;
-          const { result } = url.startsWith("/verify")
+          const isVerify = url.startsWith("/verify");
+          const { result } = isVerify
             ? await facilitator.verify(payload, requirements)
             : await facilitator.settle(payload, requirements);
+          emit(isVerify ? "verify" : "settle", parsed.paymentPayload, parsed.paymentRequirements, result);
           send(res, 200, result);
           return;
         }

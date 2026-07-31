@@ -4,7 +4,7 @@
 import { describe, it, expect } from "vitest";
 import { HTTPFacilitatorClient } from "@x402/core/http";
 import type { PaymentPayload } from "@x402/core/types";
-import { startBenchServer } from "../src/index.js";
+import { startBenchServer, type BenchEvent } from "../src/index.js";
 import { CHAIN, USDC, makePayment, randomAddress } from "./helpers.js";
 
 const startServer = (faults?: { transferReverts?: boolean; settleReverts?: boolean }) =>
@@ -55,6 +55,31 @@ describe("bench HTTP facilitator server (a real HTTPFacilitatorClient over the w
       const facilitator = new HTTPFacilitatorClient({ url: server.url });
       const supported = await facilitator.getSupported();
       expect(supported.kinds.some((k) => k.scheme === "exact")).toBe(true);
+    } finally {
+      await server.close();
+    }
+  });
+
+  it("INSPECTOR: emits a legible event per handshake (verdict, payer, synthetic tx)", async () => {
+    const { payload, requirement } = await makePayment(randomAddress());
+    const events: BenchEvent[] = [];
+    const server = await startBenchServer({
+      networks: CHAIN,
+      chain: { deployedContracts: [USDC], token: { name: "USDC", version: "2" } },
+      port: 0,
+      onEvent: (e) => events.push(e),
+    });
+    try {
+      const facilitator = new HTTPFacilitatorClient({ url: server.url });
+      await facilitator.verify(payload as never, requirement as never);
+      await facilitator.settle(payload as never, requirement as never);
+
+      const verify = events.find((e) => e.route === "verify");
+      const settle = events.find((e) => e.route === "settle");
+      expect(verify?.verdict).toBe("accepted");
+      expect(verify?.payer, "the inspector surfaces the payer").toBeTruthy();
+      expect(settle?.verdict).toBe("accepted");
+      expect(settle?.transaction).toMatch(/^0x[0-9a-f]{64}$/);
     } finally {
       await server.close();
     }
