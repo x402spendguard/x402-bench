@@ -22,6 +22,9 @@
   "files": [
     "dist"
   ],
+  "bin": {
+    "x402-bench": "./dist/cli.js"
+  },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {

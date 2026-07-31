@@ -1,53 +1,21 @@
-// The offline proof for x402-bench itself: a REAL @x402 client produces a genuine signed payment
-// against a genuine 402, and the BenchFacilitator verifies + settles it with no chain, no key, no
-// funds. These are the same load-bearing assertions carried over from the spendguard seed, plus the
-// one this tool adds: every result carries an honest fidelity label.
+// The offline proof for x402-bench's library API: a REAL @x402 client produces a genuine signed
+// payment, and BenchFacilitator verifies + settles it with no chain, no key, no funds. Same
+// load-bearing assertions as the spendguard seed, plus the one this tool adds: every result carries
+// an honest fidelity label.
 import { describe, it, expect } from "vitest";
-import { privateKeyToAccount, generatePrivateKey } from "viem/accounts";
-import { x402Client, x402HTTPClient } from "@x402/core/client";
-import { registerExactEvmScheme } from "@x402/evm/exact/client";
-import type { PaymentPayload, PaymentRequired, PaymentRequirements } from "@x402/core/types";
-import { BenchFacilitator, startX402Server } from "../src/index.js";
-
-const CHAIN = "eip155:84532";
-const USDC = "0x036cbd53842c5426634e7929541ec2318f3dcf7e";
-const AMOUNT = "10000"; // atomic USDC (6 decimals) -> 0.01 USDC
-
-// Produce a REAL signed exact/EIP-3009 payment for `AMOUNT` -> `payTo` via the real @x402 client and
-// a throwaway account (real crypto, no funds). No guard, no spendguard — just the raw client.
-async function makePayment(payTo: string): Promise<{ payload: PaymentPayload; requirement: PaymentRequirements }> {
-  const account = privateKeyToAccount(generatePrivateKey());
-  const client = new x402Client();
-  registerExactEvmScheme(client, { signer: account as never });
-  const httpClient = new x402HTTPClient(client);
-
-  const requirement = { scheme: "exact", network: CHAIN, asset: USDC, amount: AMOUNT, payTo, maxTimeoutSeconds: 600, extra: { name: "USDC", version: "2" } };
-  const pr = { x402Version: 2, resource: { url: "http://resource.local/x" }, accepts: [requirement] } as unknown as PaymentRequired;
-
-  const server = await startX402Server(pr);
-  try {
-    const res = await fetch(server.url);
-    const header = res.headers.get("PAYMENT-REQUIRED");
-    const body = header ? undefined : await res.json();
-    const paymentRequired = httpClient.getPaymentRequiredResponse((n) => res.headers.get(n), body);
-    const payload = (await client.createPaymentPayload(paymentRequired)) as PaymentPayload;
-    return { payload, requirement: requirement as unknown as PaymentRequirements };
-  } finally {
-    await server.close();
-  }
-}
+import type { PaymentPayload } from "@x402/core/types";
+import { BenchFacilitator } from "../src/index.js";
+import { CHAIN, USDC, makePayment, randomAddress } from "./helpers.js";
 
 const bench = (faults?: { transferReverts?: boolean; settleReverts?: boolean }) =>
   new BenchFacilitator({ networks: CHAIN, chain: { deployedContracts: [USDC], token: { name: "USDC", version: "2" }, faults } });
 
 describe("BenchFacilitator (offline, real crypto, faked chain)", () => {
   it("HAPPY: verifies + settles a real payment, returns a synthetic tx hash, and labels its fidelity", async () => {
-    const payTo = privateKeyToAccount(generatePrivateKey()).address.toLowerCase();
-    const { payload, requirement } = await makePayment(payTo);
+    const { payload, requirement } = await makePayment(randomAddress());
 
     const verify = await bench().verify(payload, requirement);
     expect(verify.result.isValid, `verify failed: ${verify.result.invalidReason ?? ""}`).toBe(true);
-    // The honesty label rides on the result — signature real, chain/settlement faked.
     expect(verify.fidelity.signature).toBe("verified");
     expect(verify.fidelity.chain).toBe("simulated");
 
@@ -58,8 +26,7 @@ describe("BenchFacilitator (offline, real crypto, faked chain)", () => {
   });
 
   it("DIFFERENTIATOR: the SAME payload is accepted untampered but REJECTED after one flipped byte", async () => {
-    const payTo = privateKeyToAccount(generatePrivateKey()).address.toLowerCase();
-    const { payload, requirement } = await makePayment(payTo);
+    const { payload, requirement } = await makePayment(randomAddress());
 
     // NON-VACUOUS: the untouched payload IS accepted — not rejecting everything.
     expect((await bench().verify(payload, requirement)).result.isValid).toBe(true);
@@ -75,8 +42,7 @@ describe("BenchFacilitator (offline, real crypto, faked chain)", () => {
   });
 
   it("FAULT transferReverts: injecting a reverting transfer flips a PASSING payment to REJECTED", async () => {
-    const payTo = privateKeyToAccount(generatePrivateKey()).address.toLowerCase();
-    const { payload, requirement } = await makePayment(payTo);
+    const { payload, requirement } = await makePayment(randomAddress());
 
     expect((await bench().verify(payload, requirement)).result.isValid).toBe(true);
     const verify = await bench({ transferReverts: true }).verify(payload, requirement);
@@ -85,8 +51,7 @@ describe("BenchFacilitator (offline, real crypto, faked chain)", () => {
   });
 
   it("FAULT settleReverts: flips a SETTLING payment to a loud, labeled settle failure", async () => {
-    const payTo = privateKeyToAccount(generatePrivateKey()).address.toLowerCase();
-    const { payload, requirement } = await makePayment(payTo);
+    const { payload, requirement } = await makePayment(randomAddress());
 
     expect((await bench().settle(payload, requirement)).result.success).toBe(true);
     const settle = await bench({ settleReverts: true }).settle(payload, requirement);

@@ -62,4 +62,9 @@ export class BenchFacilitator {
     const result = await this.facilitator.settle(payload, requirements);
     return { result, fidelity: EXACT_EVM_FIDELITY };
   }
+
+  /** The facilitator's supported payment kinds / extensions / signers (served at GET /supported). */
+  getSupported(): ReturnType<x402Facilitator["getSupported"]> {
+    return this.facilitator.getSupported();
+  }
 }
