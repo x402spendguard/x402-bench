@@ -74,24 +74,20 @@ export async function startBenchServer(opts: BenchServerOpts): Promise<RunningBe
     res.end(JSON.stringify(body, jsonReplacer));
   };
 
-  // The inspector tap: summarize a handshake and hand it to opts.onEvent (if any). Read-only over
-  // untrusted JSON, so every field is optional-and-defensive.
-  const emit = (route: BenchEvent["route"], rawPayload: unknown, rawReq: unknown, result: unknown): void => {
+  // The inspector tap — CONTAINMENT-WRAPPED by construction: an observer (including a user-supplied
+  // `onEvent`, since it is public API) must NEVER be able to break the handshake. Both building the
+  // event (over untrusted JSON) and the callback itself run inside one try/catch, so a throwing tap
+  // cannot escape into the response path — the facilitator answers regardless of what the observer
+  // does. Same containment as the decision-sink's onAuditFailure: the observer's failure is
+  // contained and never touches the thing observed. A facilitator's liveness must not depend on the
+  // observer behaving.
+  const emit = (build: () => BenchEvent): void => {
     if (!opts.onEvent) return;
-    const p = rawPayload as { payload?: { authorization?: { from?: string } } };
-    const r = rawReq as { payTo?: string; amount?: string; asset?: string };
-    const out = result as { isValid?: boolean; success?: boolean; invalidReason?: string; errorReason?: string; transaction?: string };
-    const accepted = route === "verify" ? out.isValid === true : out.success === true;
-    opts.onEvent({
-      route,
-      verdict: accepted ? "accepted" : "rejected",
-      reason: accepted ? undefined : out.invalidReason ?? out.errorReason,
-      payer: p.payload?.authorization?.from,
-      payTo: r.payTo,
-      amount: r.amount,
-      asset: r.asset,
-      transaction: route === "settle" && accepted ? out.transaction : undefined,
-    });
+    try {
+      opts.onEvent(build());
+    } catch {
+      /* an observer must never wedge what it observes — read-only by construction */
+    }
   };
 
   const server = createServer((req, res) => {
@@ -100,7 +96,7 @@ export async function startBenchServer(opts: BenchServerOpts): Promise<RunningBe
         const url = req.url ?? "";
         const method = req.method ?? "GET";
         if (method === "GET" && url.startsWith("/supported")) {
-          opts.onEvent?.({ route: "supported" });
+          emit(() => ({ route: "supported" }));
           send(res, 200, facilitator.getSupported());
           return;
         }
@@ -119,7 +115,22 @@ export async function startBenchServer(opts: BenchServerOpts): Promise<RunningBe
           const { result } = isVerify
             ? await facilitator.verify(payload, requirements)
             : await facilitator.settle(payload, requirements);
-          emit(isVerify ? "verify" : "settle", parsed.paymentPayload, parsed.paymentRequirements, result);
+          emit(() => {
+            const p = parsed.paymentPayload as { payload?: { authorization?: { from?: string } } };
+            const r = parsed.paymentRequirements as { payTo?: string; amount?: string; asset?: string };
+            const out = result as { isValid?: boolean; success?: boolean; invalidReason?: string; errorReason?: string; transaction?: string };
+            const accepted = isVerify ? out.isValid === true : out.success === true;
+            return {
+              route: isVerify ? "verify" : "settle",
+              verdict: accepted ? "accepted" : "rejected",
+              reason: accepted ? undefined : out.invalidReason ?? out.errorReason,
+              payer: p.payload?.authorization?.from,
+              payTo: r.payTo,
+              amount: r.amount,
+              asset: r.asset,
+              transaction: !isVerify && accepted ? out.transaction : undefined,
+            };
+          });
           send(res, 200, result);
           return;
         }

@@ -84,4 +84,26 @@ describe("bench HTTP facilitator server (a real HTTPFacilitatorClient over the w
       await server.close();
     }
   });
+
+  it("ISOLATION: a THROWING onEvent (a user's buggy tap) never breaks the handshake", async () => {
+    const { payload, requirement } = await makePayment(randomAddress());
+    const server = await startBenchServer({
+      networks: CHAIN,
+      chain: { deployedContracts: [USDC], token: { name: "USDC", version: "2" } },
+      port: 0,
+      onEvent: () => {
+        throw new Error("buggy observer");
+      },
+    });
+    try {
+      // Every route invokes onEvent; a throwing tap must NOT turn any handshake into a 500. The
+      // facilitator's liveness is isolated from the observer by construction (containment-wrapped emit).
+      const facilitator = new HTTPFacilitatorClient({ url: server.url });
+      expect((await facilitator.verify(payload as never, requirement as never)).isValid).toBe(true);
+      expect((await facilitator.settle(payload as never, requirement as never)).success).toBe(true);
+      expect((await facilitator.getSupported()).kinds.length).toBeGreaterThan(0);
+    } finally {
+      await server.close();
+    }
+  });
 });
