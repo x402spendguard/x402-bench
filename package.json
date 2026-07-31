@@ -1,6 +1,6 @@
 {
   "name": "x402-bench",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "description": "The x402 test bench: a local, honest mock facilitator. Real @x402 signature verification, faked chain — it won't teach you a false green.",
   "type": "module",
   "license": "MIT",
@@ -37,10 +37,13 @@
     "node": ">=20"
   },
   "scripts": {
+    "prebuild": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\"",
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "prepack": "npm run build",
+    "prepublishOnly": "npm run typecheck && npm test"
   },
   "dependencies": {
     "@x402/core": "~2.18.0",

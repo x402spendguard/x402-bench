@@ -79,7 +79,7 @@ The precise reason isn't invented — you answer the facilitator's own diagnosti
 
 ## Status
 
-`0.0.1` — the honest core, complete: exact/EIP-3009 EVM verify + settle over a faked chain, with fidelity labeling on every result — as a **library**, a runnable **`npx x402-bench` HTTP facilitator server** (fidelity header on every response), and a **live inspector** (each handshake printed as it happens; `--quiet` to silence). Injected chain-state faults surface the facilitator's own **precise** reason (`insufficient_balance` / `nonce_used`). Not yet built:
+`0.1.0` — the honest core, complete: exact/EIP-3009 EVM verify + settle over a faked chain, with fidelity labeling on every result — as a **library**, a runnable **`npx x402-bench` HTTP facilitator server** (fidelity header on every response), and a **live inspector** (each handshake printed as it happens; `--quiet` to silence). Injected chain-state faults surface the facilitator's own **precise** reason (`insufficient_balance` / `nonce_used`). Not yet built:
 
 - an offline load/throughput harness — because the facilitator is free and instant, you can hammer *your* integration with thousands of simulated payments to test concurrency/error-handling. **Guardrail:** it would measure *your integration's off-chain behavior only*, labeled as such — never chain/settlement performance, which is faked.
 
