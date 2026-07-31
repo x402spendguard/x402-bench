@@ -26,9 +26,10 @@ export const EXACT_EVM_FIDELITY: FidelityReport = {
   note:
     "Signature + authorization are verified FOR REAL by @x402 (in-library ECDSA recovery) — a bad " +
     "signature is rejected. Chain state (balance, nonce, deployment) is SIMULATED. Settlement returns " +
-    "a SYNTHETIC tx hash; nothing is submitted to any chain. On chain-state faults the rejection reason " +
-    "is GENERIC (simulation_failed): x402-bench does not yet diagnose insufficient_balance vs nonce_reuse. " +
-    "A green here proves SHAPE-acceptance (the payment is protocol-valid), NOT chain-acceptance.",
+    "a SYNTHETIC tx hash; nothing is submitted to any chain. When you inject a specific chain-state " +
+    "fault (insufficient_balance / nonce_used), the facilitator's OWN diagnosis surfaces that PRECISE " +
+    "reason; an unspecified revert yields the generic simulation_failed. A green here proves " +
+    "SHAPE-acceptance (the payment is protocol-valid), NOT chain-acceptance.",
 };
 
 /** The loud startup notice — printed by the CLI/server so the boundary is stated to the user's face,
@@ -37,5 +38,5 @@ export const FIDELITY_BANNER = `x402-bench — HONEST MOCK FACILITATOR (offline;
   [real]      signatures      verified for real (@x402 ECDSA) — a bad signature is REJECTED
   [simulated] chain state     balance / nonce / deployment are faked
   [synthetic] settlement      a fabricated tx hash; no chain, no gas, nothing moves
-  [limit]     fault reasons   generic (simulation_failed); precise diagnosis not yet implemented
+  [faults]    fault reasons   precise for an injected cause (insufficient_balance / nonce_used); else generic
 A green result proves the payment is protocol-valid (SHAPE), NOT that a real chain would accept it.`;

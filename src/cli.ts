@@ -16,9 +16,17 @@ const network = flag("network", "eip155:84532") as string;
 const asset = flag("asset", "0x036cbd53842c5426634e7929541ec2318f3dcf7e") as string;
 const tokenName = flag("token-name", "USDC") as string;
 const tokenVersion = flag("token-version", "2") as string;
-const fault = flag("fault"); // "transferReverts" | "settleReverts"
+const fault = flag("fault"); // transferReverts | insufficient_balance | nonce_used | settleReverts
 const faults =
-  fault === "transferReverts" ? { transferReverts: true } : fault === "settleReverts" ? { settleReverts: true } : undefined;
+  fault === "insufficient_balance"
+    ? { transferReverts: "insufficient_balance" as const }
+    : fault === "nonce_used"
+      ? { transferReverts: "nonce_used" as const }
+      : fault === "transferReverts"
+        ? { transferReverts: true }
+        : fault === "settleReverts"
+          ? { settleReverts: true }
+          : undefined;
 const quiet = process.argv.includes("--quiet");
 
 const short = (a?: string): string => (a && a.length > 12 ? `${a.slice(0, 6)}…${a.slice(-4)}` : a ?? "?");

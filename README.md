@@ -17,7 +17,7 @@ x402-bench can't do that, **by construction**. It does not implement `verify` at
 | **Signature + authorization** | ✅ **real** | Verified by `@x402` (real ECDSA recovery). A bad signature is rejected. |
 | **Chain state** (balance, nonce, deployment) | ~ **simulated** | Faked, not read from any chain. |
 | **Settlement** | ~ **synthetic** | Returns a well-formed but fabricated tx hash. Nothing is submitted; nothing moves. |
-| **Fault reasons** | ⚠️ **generic** | On a chain-state fault the reason is the generic `simulation_failed`; it does **not** yet diagnose `insufficient_balance` vs `nonce_reuse`. |
+| **Fault reasons** | ✅ **precise (injected)** | Inject a specific cause and the facilitator's *own* diagnosis surfaces the precise reason (`insufficient_balance` / `nonce_used`); an unspecified revert yields generic `simulation_failed`. |
 
 **A green result proves the payment is protocol-valid (its *shape* is right), NOT that a real chain would accept it.** For chain-acceptance you still need a testnet run. Every `verify`/`settle` result carries a `fidelity` field saying exactly this, and `BenchFacilitator.BANNER` is a ready-to-print notice for CLIs/servers.
 
@@ -41,7 +41,7 @@ const facilitator = new HTTPFacilitatorClient({ url: "http://127.0.0.1:3402" });
 // settlement returns a synthetic tx hash. Nothing is submitted to any chain.
 ```
 
-Flags: `--port` (3402) · `--network` (eip155:84532) · `--asset` · `--token-name`/`--token-version` · `--fault transferReverts|settleReverts`.
+Flags: `--port` (3402) · `--network` (eip155:84532) · `--asset` · `--token-name`/`--token-version` · `--fault transferReverts|insufficient_balance|nonce_used|settleReverts` · `--quiet` (silence the live inspector).
 
 ### As a library
 
@@ -68,17 +68,19 @@ Model the chain-state failures a real facilitator would hit, so you can test you
 ```ts
 new BenchFacilitator({ networks: "eip155:84532", chain: {
   deployedContracts: ["0x036cbd…"],
-  faults: { transferReverts: true },  // the transfer would revert -> verify rejects
-  // faults: { settleReverts: true }, // mined-but-reverted receipt -> settle fails
+  faults: { transferReverts: "insufficient_balance" }, // verify rejects with the PRECISE reason
+  // faults: { transferReverts: "nonce_used" },        // precise: nonce_already_used
+  // faults: { transferReverts: true },                // generic: simulation_failed
+  // faults: { settleReverts: true },                  // mined-but-reverted receipt -> settle fails
 }});
 ```
 
+The precise reason isn't invented — you answer the facilitator's own diagnostic reads with the state you inject, and *it* diagnoses. So your error-handling is tested against the same reason string production would emit.
+
 ## Status
 
-`0.0.1` — the honest core: exact/EIP-3009 EVM verify + settle over a faked chain, with fidelity labeling on every result — as a **library** and as a runnable **`npx x402-bench` HTTP facilitator server** (fidelity header on every response). Not yet built:
+`0.0.1` — the honest core, complete: exact/EIP-3009 EVM verify + settle over a faked chain, with fidelity labeling on every result — as a **library**, a runnable **`npx x402-bench` HTTP facilitator server** (fidelity header on every response), and a **live inspector** (each handshake printed as it happens; `--quiet` to silence). Injected chain-state faults surface the facilitator's own **precise** reason (`insufficient_balance` / `nonce_used`). Not yet built:
 
-- precise fault-reason diagnosis (`insufficient_balance` vs `nonce_reuse`, needs on-chain-diagnostic modeling);
-- a live inspector (render each handshake as it happens);
 - an offline load/throughput harness — because the facilitator is free and instant, you can hammer *your* integration with thousands of simulated payments to test concurrency/error-handling. **Guardrail:** it would measure *your integration's off-chain behavior only*, labeled as such — never chain/settlement performance, which is faked.
 
 Contributions and issues welcome.

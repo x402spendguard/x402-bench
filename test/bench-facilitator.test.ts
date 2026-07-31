@@ -7,7 +7,7 @@ import type { PaymentPayload } from "@x402/core/types";
 import { BenchFacilitator } from "../src/index.js";
 import { CHAIN, USDC, makePayment, randomAddress } from "./helpers.js";
 
-const bench = (faults?: { transferReverts?: boolean; settleReverts?: boolean }) =>
+const bench = (faults?: { transferReverts?: boolean | "insufficient_balance" | "nonce_used"; settleReverts?: boolean }) =>
   new BenchFacilitator({ networks: CHAIN, chain: { deployedContracts: [USDC], token: { name: "USDC", version: "2" }, faults } });
 
 describe("BenchFacilitator (offline, real crypto, faked chain)", () => {
@@ -57,5 +57,28 @@ describe("BenchFacilitator (offline, real crypto, faked chain)", () => {
     const settle = await bench({ settleReverts: true }).settle(payload, requirement);
     expect(settle.result.success).toBe(false);
     expect(String(settle.result.errorReason ?? "")).toContain("transaction_failed");
+  });
+
+  it("FAULT insufficient_balance: the facilitator's OWN diagnosis surfaces the PRECISE reason", async () => {
+    const { payload, requirement } = await makePayment(randomAddress());
+    // We answer the facilitator's MULTICALL3 diagnostic reads (balance=0) so ITS diagnosis lands on
+    // insufficient_balance — not a reason we invented, a reason it derived from the state we simulate.
+    const verify = await bench({ transferReverts: "insufficient_balance" }).verify(payload, requirement);
+    expect(verify.result.isValid).toBe(false);
+    expect(String(verify.result.invalidReason ?? "")).toContain("insufficient_balance");
+  });
+
+  it("FAULT nonce_used: an injected used nonce surfaces the PRECISE reason (not generic)", async () => {
+    const { payload, requirement } = await makePayment(randomAddress());
+    const verify = await bench({ transferReverts: "nonce_used" }).verify(payload, requirement);
+    expect(verify.result.isValid).toBe(false);
+    expect(String(verify.result.invalidReason ?? "")).toContain("nonce_already_used");
+  });
+
+  it("FAULT transferReverts:true stays GENERIC (unspecified cause → simulation_failed)", async () => {
+    const { payload, requirement } = await makePayment(randomAddress());
+    const verify = await bench({ transferReverts: true }).verify(payload, requirement);
+    expect(verify.result.isValid).toBe(false);
+    expect(String(verify.result.invalidReason ?? "")).toContain("simulation");
   });
 });
