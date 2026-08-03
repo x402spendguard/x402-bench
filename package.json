@@ -1,6 +1,6 @@
 {
   "name": "x402-bench",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "The x402 test bench: a local, honest mock facilitator. Real @x402 signature verification, faked chain — it won't teach you a false green.",
   "type": "module",
   "license": "MIT",
