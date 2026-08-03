@@ -24,4 +24,7 @@ jobs:
       # The bin is a shipped artifact. Guard that `--help` prints usage and EXITS — it once silently
       # started the server and hung. `timeout` fails the job if it ever hangs again (bash pipefail is
       # on by default in Actions, so a killed `node` fails the step); grep proves the usage text.
-      - run: timeout 15 node dist/cli.js --help | grep -q "Usage: npx x402-bench"
+      # Block scalar + a colon-free grep pattern (a `: ` in a plain YAML scalar is a mapping separator).
+      - name: bin smoke — --help prints usage and exits
+        run: |
+          timeout 15 node dist/cli.js --help | grep -q "npx x402-bench"
