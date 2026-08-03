@@ -5,29 +5,7 @@
 import type { Network } from "@x402/core/types";
 import { startBenchServer, type BenchEvent } from "./server.js";
 import { FIDELITY_BANNER } from "./fidelity.js";
-
-function flag(name: string, fallback?: string): string | undefined {
-  const i = process.argv.indexOf(`--${name}`);
-  return i >= 0 && i + 1 < process.argv.length ? process.argv[i + 1] : fallback;
-}
-
-const port = Number(flag("port", "3402"));
-const network = flag("network", "eip155:84532") as string;
-const asset = flag("asset", "0x036cbd53842c5426634e7929541ec2318f3dcf7e") as string;
-const tokenName = flag("token-name", "USDC") as string;
-const tokenVersion = flag("token-version", "2") as string;
-const fault = flag("fault"); // transferReverts | insufficient_balance | nonce_used | settleReverts
-const faults =
-  fault === "insufficient_balance"
-    ? { transferReverts: "insufficient_balance" as const }
-    : fault === "nonce_used"
-      ? { transferReverts: "nonce_used" as const }
-      : fault === "transferReverts"
-        ? { transferReverts: true }
-        : fault === "settleReverts"
-          ? { settleReverts: true }
-          : undefined;
-const quiet = process.argv.includes("--quiet");
+import { planFromArgv, USAGE } from "./cli-plan.js";
 
 const short = (a?: string): string => (a && a.length > 12 ? `${a.slice(0, 6)}…${a.slice(-4)}` : a ?? "?");
 
@@ -44,20 +22,28 @@ function printEvent(e: BenchEvent): void {
 }
 
 async function main(): Promise<void> {
+  const plan = planFromArgv(process.argv);
+  if (plan.action === "help") {
+    // Usage on stdout, then a normal return -> exit 0. Never reaches startBenchServer, so `--help`
+    // can never boot the facilitator and hang (the reported bug, closed by construction).
+    // eslint-disable-next-line no-console
+    console.log(USAGE);
+    return;
+  }
   // eslint-disable-next-line no-console
   console.error(FIDELITY_BANNER);
   console.error("");
   const server = await startBenchServer({
-    networks: network as Network,
-    chain: { deployedContracts: [asset], token: { name: tokenName, version: tokenVersion }, faults },
-    port,
-    onEvent: quiet ? undefined : printEvent,
+    networks: plan.network as Network,
+    chain: { deployedContracts: [plan.asset], token: { name: plan.tokenName, version: plan.tokenVersion }, faults: plan.faults },
+    port: plan.port,
+    onEvent: plan.quiet ? undefined : printEvent,
   });
   console.error(`x402-bench facilitator listening on ${server.url}`);
   console.error(`  POST ${server.url}/verify   POST ${server.url}/settle   GET ${server.url}/supported`);
-  console.error(`  network=${network} asset=${asset}${fault ? ` fault=${fault}` : ""}`);
+  console.error(`  network=${plan.network} asset=${plan.asset}${plan.faultLabel ? ` fault=${plan.faultLabel}` : ""}`);
   console.error(`  point your @x402 client's facilitator URL here. Ctrl-C to stop.`);
-  console.error(quiet ? "  (inspector off — remove --quiet to watch handshakes)" : "  live inspector on — handshakes print below:");
+  console.error(plan.quiet ? "  (inspector off — remove --quiet to watch handshakes)" : "  live inspector on — handshakes print below:");
 }
 
 main().catch((err) => {

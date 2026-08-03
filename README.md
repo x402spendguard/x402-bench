@@ -45,21 +45,48 @@ Flags: `--port` (3402) · `--network` (eip155:84532) · `--asset` · `--token-na
 
 ### As a library
 
+The one thing every library example needs is a **signed payment payload**. That's what a real `@x402`
+client produces when it pays a 402 — so here is the whole loop, end to end, with a throwaway account
+and no funds. (In your own app, steps 1–2 are just *your* client paying; you already have the payload.)
+
 ```ts
-import { BenchFacilitator } from "x402-bench";
+import { BenchFacilitator, startX402Server } from "x402-bench";
+import { privateKeyToAccount, generatePrivateKey } from "viem/accounts";
+import { x402Client, x402HTTPClient } from "@x402/core/client";
+import { registerExactEvmScheme } from "@x402/evm/exact/client";
 
-const bench = new BenchFacilitator({
-  networks: "eip155:84532",
-  chain: { deployedContracts: ["0x036cbd53842c5426634e7929541ec2318f3dcf7e"] }, // your asset
-});
+const CHAIN = "eip155:84532";
+const USDC = "0x036cbd53842c5426634e7929541ec2318f3dcf7e";
+const requirement = {
+  scheme: "exact", network: CHAIN, asset: USDC, amount: "10000",   // 0.01 USDC (6 decimals)
+  payTo: "0x1111111111111111111111111111111111111111",
+  maxTimeoutSeconds: 600, extra: { name: "USDC", version: "2" },   // `extra` is the EIP-712 domain
+};
 
-// `payload` is what a real @x402 client produces; `requirements` is the offer.
-const { result, fidelity } = await bench.verify(payload, requirements);
-console.log(result.isValid, fidelity.signature); // true "verified"  — or false on a bad signature
+// 1. A real @x402 client with a throwaway signer (real key, no funds).
+const account = privateKeyToAccount(generatePrivateKey());
+const client = new x402Client();
+registerExactEvmScheme(client, { signer: account as never });      // viem account -> SDK signer type
+const http = new x402HTTPClient(client);
 
-const settled = await bench.settle(payload, requirements);
-console.log(settled.result.transaction); // 0x… a synthetic tx hash; nothing was submitted
+// 2. Get a genuine 402 (x402-bench's own resource server stands in) and sign it -> the payload.
+const server = await startX402Server({ x402Version: 2, resource: { url: "http://resource.local/x" }, accepts: [requirement] });
+const res = await fetch(server.url);
+const header = res.headers.get("PAYMENT-REQUIRED");
+const body = header ? undefined : await res.json();
+const payload = await client.createPaymentPayload(http.getPaymentRequiredResponse((n) => res.headers.get(n), body));
+await server.close();
+
+// 3. Verify it — REAL signature check, faked chain. `fidelity` says which is which, on every result.
+const bench = new BenchFacilitator({ networks: CHAIN, chain: { deployedContracts: [USDC], token: { name: "USDC", version: "2" } } });
+const { result, fidelity } = await bench.verify(payload, requirement);
+console.log(result.isValid, fidelity.signature); // true "verified" — a TAMPERED signature would be false
+
+const settled = await bench.settle(payload, requirement);
+console.log(settled.result.transaction);          // 0x… a synthetic tx hash; nothing was submitted
 ```
+
+> This exact flow — including the tamper-is-rejected check — runs in [`test/documented-example.test.ts`](https://github.com/x402spendguard/x402-bench/blob/main/test/documented-example.test.ts), so the example can't quietly rot.
 
 ### Fault injection
 
